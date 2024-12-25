@@ -1,0 +1,66 @@
+#!/bin/bash
+
+# Define variables
+URL="http://example.com/path/to/script.sh"  # Replace with actual URL
+LOCAL_SCRIPT="/path/to/local/script.sh"     # Replace with full path
+TEMP_SCRIPT="/tmp/downloaded_script.tmp"     # Temporary file for download
+OLD_SCRIPT="${LOCAL_SCRIPT}.old"            # Path for old script backup
+
+# Function to clean up temporary files
+cleanup() {
+    rm -f "$TEMP_SCRIPT"
+}
+
+# Set up trap for cleanup on script exit
+trap cleanup EXIT
+
+# Create directory if it doesn't exist
+mkdir -p "$(dirname "$LOCAL_SCRIPT")"
+
+# Step a: Download the script to a temporary file
+if ! curl -s -S -f -o "$TEMP_SCRIPT" "$URL"; then
+    echo "Error: Failed to download script from $URL"
+    exit 1
+fi
+
+# Check if download is empty
+if [ ! -s "$TEMP_SCRIPT" ]; then
+    echo "Error: Downloaded file is empty"
+    exit 1
+fi
+
+# Step b: Check if the previously downloaded one exists and compare
+if [ -f "$LOCAL_SCRIPT" ]; then
+    # Calculate checksums
+    if command -v md5sum >/dev/null 2>&1; then
+        # Linux
+        NEW_CHECKSUM=$(md5sum "$TEMP_SCRIPT" | awk '{print $1}')
+        OLD_CHECKSUM=$(md5sum "$LOCAL_SCRIPT" | awk '{print $1}')
+    else
+        # macOS
+        NEW_CHECKSUM=$(md5 -q "$TEMP_SCRIPT")
+        OLD_CHECKSUM=$(md5 -q "$LOCAL_SCRIPT")
+    fi
+
+    # Compare checksums
+    if [ "$NEW_CHECKSUM" != "$OLD_CHECKSUM" ]; then
+        echo "New version detected. Updating script..."
+        # Backup old script if it exists
+        cp -f "$LOCAL_SCRIPT" "$OLD_SCRIPT"
+        # Move new script into place
+        mv "$TEMP_SCRIPT" "$LOCAL_SCRIPT"
+        # Make executable
+        chmod +x "$LOCAL_SCRIPT"
+        echo "Running new script..."
+        exec "$LOCAL_SCRIPT"
+    else
+        echo "Script is unchanged. No action needed."
+    fi
+else
+    # First time download
+    echo "Installing script for the first time..."
+    mv "$TEMP_SCRIPT" "$LOCAL_SCRIPT"
+    chmod +x "$LOCAL_SCRIPT"
+    echo "Running script for the first time..."
+    exec "$LOCAL_SCRIPT"
+fi
